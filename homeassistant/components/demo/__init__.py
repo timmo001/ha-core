@@ -187,7 +187,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     """Set the config entry up."""
     # Set configuration URL to point to the demo integration configuration
     hass.config_entries.async_update_entry(
-        config_entry, configuration_url="homeassistant://config/integrations/demo"
+        config_entry,
+        configuration_url=f"homeassistant://config/integrations/integration/demo#config_entry={config_entry.entry_id}",
     )
     # Set up demo platforms with config entry
     await hass.config_entries.async_forward_entry_setups(
