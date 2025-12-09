@@ -30,7 +30,7 @@ from homeassistant.util.event_type import EventType
 from homeassistant.util.hass_dict import HassKey
 from homeassistant.util.json import format_unserializable_data
 
-from . import config_validation as cv, storage, translation
+from . import storage, translation
 from .debounce import Debouncer
 from .deprecation import deprecated_function
 from .frame import ReportBehavior, report_usage
@@ -840,6 +840,9 @@ class DeviceRegistry(BaseRegistry[dict[str, list[dict[str, Any]]]]):
     ) -> DeviceEntry:
         """Get device. Create if it doesn't exist."""
         if configuration_url is not UNDEFINED:
+            # Import here to avoid circular import with config_validation
+            from . import config_validation as cv  # noqa: PLC0415
+
             configuration_url = cv.validate_configuration_url(configuration_url)
 
         config_entry = self.hass.config_entries.async_get_entry(config_entry_id)
@@ -1225,6 +1228,9 @@ class DeviceRegistry(BaseRegistry[dict[str, list[dict[str, Any]]]]):
             old_values["identifiers"] = old.identifiers
 
         if configuration_url is not UNDEFINED:
+            # Import here to avoid circular import with config_validation
+            from . import config_validation as cv  # noqa: PLC0415
+
             configuration_url = cv.validate_configuration_url(configuration_url)
 
         for attr_name, value in (
