@@ -2493,8 +2493,8 @@ class ConfigEntries:
                 changed = True
                 _setter(entry, "subentries", MappingProxyType(subentries))
 
-            if configuration_url is not UNDEFINED:
-                configuration_url = cv.validate_configuration_url(configuration_url)
+        if configuration_url is not UNDEFINED:
+            configuration_url = cv.validate_configuration_url(configuration_url)
             if entry.configuration_url != configuration_url:
                 changed = True
                 _setter(entry, "configuration_url", configuration_url)
