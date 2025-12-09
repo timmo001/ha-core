@@ -13,6 +13,7 @@ from datetime import (
 )
 from enum import Enum, StrEnum
 import functools
+from functools import lru_cache
 import logging
 from numbers import Number
 import os
@@ -27,6 +28,7 @@ from uuid import UUID
 
 import voluptuous as vol
 import voluptuous_serialize
+from yarl import URL
 
 from homeassistant.const import (
     ATTR_AREA_ID,
@@ -878,6 +880,41 @@ def url(
 def configuration_url(value: Any) -> str:
     """Validate an URL that allows the homeassistant schema."""
     return url(value, CONFIGURATION_URL_PROTOCOL_SCHEMA_LIST)
+
+
+# Configuration URL schemes allowed for device and config entry configuration_url fields
+CONFIGURATION_URL_SCHEMES = {"http", "https", "homeassistant"}
+
+_cached_parse_url = lru_cache(maxsize=512)(URL)
+"""Parse a URL and cache the result."""
+
+
+def validate_configuration_url(value: Any) -> str | None:
+    """Validate and convert configuration_url.
+
+    This function validates URLs for use in configuration_url fields
+    in both DeviceEntry and ConfigEntry. It accepts http, https, and
+    homeassistant:// URL schemes.
+
+    Args:
+        value: The URL value to validate (can be str, URL, or None)
+
+    Returns:
+        The validated URL as a string, or None if value is None
+
+    Raises:
+        ValueError: If the URL is invalid (wrong scheme or missing host)
+    """
+    if value is None:
+        return None
+
+    url_as_str = str(value)
+    parsed_url = value if type(value) is URL else _cached_parse_url(url_as_str)
+
+    if parsed_url.scheme not in CONFIGURATION_URL_SCHEMES or not parsed_url.host:
+        raise ValueError(f"invalid configuration_url '{value}'")
+
+    return url_as_str
 
 
 def url_no_path(value: Any) -> str:

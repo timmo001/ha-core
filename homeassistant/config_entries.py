@@ -54,6 +54,7 @@ from .exceptions import (
     HomeAssistantError,
 )
 from .helpers import (
+    config_validation as cv,
     device_registry as dr,
     entity_registry as er,
     issue_registry as ir,
@@ -128,7 +129,7 @@ HANDLERS: Registry[str, type[ConfigFlow]] = Registry()
 
 STORAGE_KEY = "core.config_entries"
 STORAGE_VERSION = 1
-STORAGE_VERSION_MINOR = 5
+STORAGE_VERSION_MINOR = 6
 
 SAVE_DELAY = 1
 
@@ -277,6 +278,7 @@ UPDATE_ENTRY_CONFIG_ENTRY_ATTRS = {
     "title",
     "data",
     "options",
+    "configuration_url",
     "pref_disable_new_entities",
     "pref_disable_polling",
     "minor_version",
@@ -420,10 +422,12 @@ class ConfigEntry[_DataT = Any]:
     created_at: datetime
     modified_at: datetime
     discovery_keys: MappingProxyType[str, tuple[DiscoveryKey, ...]]
+    configuration_url: str | None
 
     def __init__(
         self,
         *,
+        configuration_url: str | None = None,
         created_at: datetime | None = None,
         data: Mapping[str, Any],
         disabled_by: ConfigEntryDisabler | None = None,
@@ -551,6 +555,7 @@ class ConfigEntry[_DataT = Any]:
         _setter(self, "created_at", created_at or utcnow())
         _setter(self, "modified_at", modified_at or utcnow())
         _setter(self, "discovery_keys", discovery_keys)
+        _setter(self, "configuration_url", configuration_url)
 
     def __repr__(self) -> str:
         """Representation of ConfigEntry."""
@@ -645,6 +650,7 @@ class ConfigEntry[_DataT = Any]:
             "error_reason_translation_key": self.error_reason_translation_key,
             "error_reason_translation_placeholders": self.error_reason_translation_placeholders,
             "num_subentries": len(self.subentries),
+            "configuration_url": self.configuration_url,
         }
         return json_fragment(json_bytes(json_repr))
 
@@ -1171,6 +1177,7 @@ class ConfigEntry[_DataT = Any]:
             "title": self.title,
             "unique_id": self.unique_id,
             "version": self.version,
+            "configuration_url": self.configuration_url,
         }
 
     @callback
@@ -1704,6 +1711,7 @@ class ConfigEntriesFlowManager(
             else MappingProxyType({})
         )
         entry = ConfigEntry(
+            configuration_url=None,
             data=result["data"],
             discovery_keys=discovery_keys,
             domain=result["handler"],
@@ -1998,6 +2006,11 @@ class ConfigEntryStore(storage.Store[dict[str, list[dict[str, Any]]]]):
                 for entry in data["entries"]:
                     entry.setdefault("subentries", entry.get("subentries", {}))
 
+            if old_minor_version < 6:
+                # Version 1.6 adds configuration_url
+                for entry in data["entries"]:
+                    entry.setdefault("configuration_url", None)
+
         if old_major_version > 1:
             raise NotImplementedError
         return data
@@ -2194,6 +2207,7 @@ class ConfigEntries:
             entry_id = entry["entry_id"]
 
             config_entry = ConfigEntry(
+                configuration_url=entry.get("configuration_url"),
                 created_at=datetime.fromisoformat(entry["created_at"]),
                 data=entry["data"],
                 disabled_by=try_parse_enum(ConfigEntryDisabler, entry["disabled_by"]),
@@ -2358,6 +2372,7 @@ class ConfigEntries:
         self,
         entry: ConfigEntry,
         *,
+        configuration_url: str | None | UndefinedType = UNDEFINED,
         data: Mapping[str, Any] | UndefinedType = UNDEFINED,
         discovery_keys: (
             MappingProxyType[str, tuple[DiscoveryKey, ...]] | UndefinedType
@@ -2380,6 +2395,7 @@ class ConfigEntries:
         """
         return self._async_update_entry(
             entry,
+            configuration_url=configuration_url,
             data=data,
             discovery_keys=discovery_keys,
             minor_version=minor_version,
@@ -2396,6 +2412,7 @@ class ConfigEntries:
         self,
         entry: ConfigEntry,
         *,
+        configuration_url: str | None | UndefinedType = UNDEFINED,
         data: Mapping[str, Any] | UndefinedType = UNDEFINED,
         discovery_keys: (
             MappingProxyType[str, tuple[DiscoveryKey, ...]] | UndefinedType
@@ -2475,6 +2492,12 @@ class ConfigEntries:
             if entry.subentries != subentries:
                 changed = True
                 _setter(entry, "subentries", MappingProxyType(subentries))
+
+            if configuration_url is not UNDEFINED:
+                configuration_url = cv.validate_configuration_url(configuration_url)
+            if entry.configuration_url != configuration_url:
+                changed = True
+                _setter(entry, "configuration_url", configuration_url)
 
         if not changed:
             return False

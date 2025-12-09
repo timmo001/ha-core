@@ -4860,6 +4860,162 @@ async def test_updating_entry_with_and_without_changes(
     assert "abcd1234" in str(entry)
 
 
+async def test_updating_entry_configuration_url(
+    manager: config_entries.ConfigEntries, freezer: FrozenDateTimeFactory
+) -> None:
+    """Test that we can update an entry configuration_url."""
+    entry = MockConfigEntry(
+        domain="test",
+        data={"first": True},
+        state=config_entries.ConfigEntryState.SETUP_ERROR,
+    )
+    entry.add_to_manager(manager)
+
+    assert entry.configuration_url is None
+
+    freezer.tick()
+    modified = dt_util.utcnow()
+
+    # Test setting homeassistant:// URL
+    assert (
+        manager.async_update_entry(
+            entry, configuration_url="homeassistant://config/integrations"
+        )
+        is True
+    )
+    assert entry.configuration_url == "homeassistant://config/integrations"
+    assert entry.modified_at == modified
+
+    # Test setting http:// URL
+    freezer.tick()
+    modified = dt_util.utcnow()
+    assert (
+        manager.async_update_entry(entry, configuration_url="http://example.com/config")
+        is True
+    )
+    assert entry.configuration_url == "http://example.com/config"
+    assert entry.modified_at == modified
+
+    # Test setting https:// URL
+    freezer.tick()
+    modified = dt_util.utcnow()
+    assert (
+        manager.async_update_entry(
+            entry, configuration_url="https://example.com/config"
+        )
+        is True
+    )
+    assert entry.configuration_url == "https://example.com/config"
+    assert entry.modified_at == modified
+
+    # Test setting to None
+    freezer.tick()
+    modified = dt_util.utcnow()
+    assert manager.async_update_entry(entry, configuration_url=None) is True
+    assert entry.configuration_url is None
+    assert entry.modified_at == modified
+
+    # Test no change returns False
+    assert manager.async_update_entry(entry, configuration_url=None) is False
+
+
+async def test_updating_entry_configuration_url_validation(
+    manager: config_entries.ConfigEntries,
+) -> None:
+    """Test that configuration_url validation works."""
+    entry = MockConfigEntry(
+        domain="test",
+        data={"first": True},
+    )
+    entry.add_to_manager(manager)
+
+    # Test invalid scheme
+    with pytest.raises(ValueError, match="invalid configuration_url"):
+        manager.async_update_entry(entry, configuration_url="ftp://example.com")
+
+    # Test missing host
+    with pytest.raises(ValueError, match="invalid configuration_url"):
+        manager.async_update_entry(entry, configuration_url="http://")
+
+    # Test valid URLs
+    manager.async_update_entry(
+        entry, configuration_url="homeassistant://config/integrations"
+    )
+    assert entry.configuration_url == "homeassistant://config/integrations"
+
+    manager.async_update_entry(entry, configuration_url="http://example.com")
+    assert entry.configuration_url == "http://example.com"
+
+    manager.async_update_entry(entry, configuration_url="https://example.com")
+    assert entry.configuration_url == "https://example.com"
+
+
+async def test_entry_configuration_url_in_api(
+    manager: config_entries.ConfigEntries,
+) -> None:
+    """Test that configuration_url is included in API responses."""
+    entry = MockConfigEntry(
+        domain="test",
+        data={"first": True},
+    )
+    entry.add_to_manager(manager)
+
+    # Set configuration_url via async_update_entry
+    manager.async_update_entry(
+        entry, configuration_url="homeassistant://config/integrations"
+    )
+
+    json_data = json_loads(json_dumps(entry.as_json_fragment))
+
+    assert "configuration_url" in json_data
+    assert json_data["configuration_url"] == "homeassistant://config/integrations"
+
+    # Test with None
+    manager.async_update_entry(entry, configuration_url=None)
+    json_data = json_loads(json_dumps(entry.as_json_fragment))
+
+    assert "configuration_url" in json_data
+    assert json_data["configuration_url"] is None
+
+
+async def test_entry_configuration_url_in_storage(
+    manager: config_entries.ConfigEntries,
+) -> None:
+    """Test that configuration_url is persisted in storage."""
+    entry = MockConfigEntry(
+        domain="test",
+        data={"first": True},
+        configuration_url="homeassistant://config/integrations",
+    )
+    entry.add_to_manager(manager)
+
+    # Get storage dict
+    storage_dict = entry.as_dict()
+
+    assert "configuration_url" in storage_dict
+    assert storage_dict["configuration_url"] == "homeassistant://config/integrations"
+
+    # Test with None
+    manager.async_update_entry(entry, configuration_url=None)
+    storage_dict = entry.as_dict()
+
+    assert "configuration_url" in storage_dict
+    assert storage_dict["configuration_url"] is None
+
+
+async def test_entry_configuration_url_backward_compatibility(
+    manager: config_entries.ConfigEntries,
+) -> None:
+    """Test that entries without configuration_url default to None."""
+    entry = MockConfigEntry(
+        domain="test",
+        data={"first": True},
+    )
+    entry.add_to_manager(manager)
+
+    assert entry.configuration_url is None
+
+
 async def test_entry_reload_calls_on_unload_listeners(
     hass: HomeAssistant, manager: config_entries.ConfigEntries
 ) -> None:

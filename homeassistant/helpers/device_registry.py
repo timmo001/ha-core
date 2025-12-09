@@ -30,7 +30,7 @@ from homeassistant.util.event_type import EventType
 from homeassistant.util.hass_dict import HassKey
 from homeassistant.util.json import format_unserializable_data
 
-from . import storage, translation
+from . import config_validation as cv, storage, translation
 from .debounce import Debouncer
 from .deprecation import deprecated_function
 from .frame import ReportBehavior, report_usage
@@ -70,8 +70,6 @@ ORPHANED_DEVICE_KEEP_SECONDS = 86400 * 30
 
 # Can be removed when suggested_area is removed from DeviceEntry
 RUNTIME_ONLY_ATTRS = {"suggested_area"}
-
-CONFIGURATION_URL_SCHEMES = {"http", "https", "homeassistant"}
 
 
 class DeviceEntryDisabler(StrEnum):
@@ -257,24 +255,6 @@ def _validate_device_info(
         )
 
     return device_info_type
-
-
-_cached_parse_url = lru_cache(maxsize=512)(URL)
-"""Parse a URL and cache the result."""
-
-
-def _validate_configuration_url(value: Any) -> str | None:
-    """Validate and convert configuration_url."""
-    if value is None:
-        return None
-
-    url_as_str = str(value)
-    url = value if type(value) is URL else _cached_parse_url(url_as_str)
-
-    if url.scheme not in CONFIGURATION_URL_SCHEMES or not url.host:
-        raise ValueError(f"invalid configuration_url '{value}'")
-
-    return url_as_str
 
 
 @lru_cache(maxsize=512)
@@ -860,7 +840,7 @@ class DeviceRegistry(BaseRegistry[dict[str, list[dict[str, Any]]]]):
     ) -> DeviceEntry:
         """Get device. Create if it doesn't exist."""
         if configuration_url is not UNDEFINED:
-            configuration_url = _validate_configuration_url(configuration_url)
+            configuration_url = cv.validate_configuration_url(configuration_url)
 
         config_entry = self.hass.config_entries.async_get_entry(config_entry_id)
         if config_entry is None:
@@ -1245,7 +1225,7 @@ class DeviceRegistry(BaseRegistry[dict[str, list[dict[str, Any]]]]):
             old_values["identifiers"] = old.identifiers
 
         if configuration_url is not UNDEFINED:
-            configuration_url = _validate_configuration_url(configuration_url)
+            configuration_url = cv.validate_configuration_url(configuration_url)
 
         for attr_name, value in (
             ("area_id", area_id),
