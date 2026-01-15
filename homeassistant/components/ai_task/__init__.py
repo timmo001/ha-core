@@ -30,6 +30,7 @@ from .const import (
     DOMAIN,
     SERVICE_GENERATE_DATA,
     SERVICE_GENERATE_IMAGE,
+    SERVICE_GENERATE_THEME,
     AITaskEntityFeature,
 )
 from .entity import AITaskEntity
@@ -39,8 +40,11 @@ from .task import (
     GenDataTaskResult,
     GenImageTask,
     GenImageTaskResult,
+    GenThemeTask,
+    GenThemeTaskResult,
     async_generate_data,
     async_generate_image,
+    async_generate_theme,
 )
 
 __all__ = [
@@ -51,8 +55,11 @@ __all__ = [
     "GenDataTaskResult",
     "GenImageTask",
     "GenImageTaskResult",
+    "GenThemeTask",
+    "GenThemeTaskResult",
     "async_generate_data",
     "async_generate_image",
+    "async_generate_theme",
 ]
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,6 +133,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         supports_response=SupportsResponse.ONLY,
         job_type=HassJobType.Coroutinefunction,
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GENERATE_THEME,
+        async_service_generate_theme,
+        schema=vol.Schema(
+            {
+                vol.Required(ATTR_INSTRUCTIONS): cv.string,
+                vol.Optional(ATTR_ENTITY_ID): cv.entity_id,
+            }
+        ),
+        supports_response=SupportsResponse.ONLY,
+        job_type=HassJobType.Coroutinefunction,
+    )
     return True
 
 
@@ -148,6 +168,12 @@ async def async_service_generate_data(call: ServiceCall) -> ServiceResponse:
 async def async_service_generate_image(call: ServiceCall) -> ServiceResponse:
     """Run the image task service."""
     return await async_generate_image(hass=call.hass, **call.data)
+
+
+async def async_service_generate_theme(call: ServiceCall) -> ServiceResponse:
+    """Run the theme generation service."""
+    result = await async_generate_theme(hass=call.hass, **call.data)
+    return result.as_dict()
 
 
 class AITaskPreferences:

@@ -24,6 +24,7 @@ IMAGE_EXPIRY_TIME = 60 * 60  # 1 hour
 
 SERVICE_GENERATE_DATA = "generate_data"
 SERVICE_GENERATE_IMAGE = "generate_image"
+SERVICE_GENERATE_THEME = "generate_theme"
 
 ATTR_INSTRUCTIONS: Final = "instructions"
 ATTR_TASK_NAME: Final = "task_name"

@@ -3,6 +3,7 @@
 import json
 
 import pytest
+import voluptuous as vol
 
 from homeassistant.components.ai_task import (
     DOMAIN,
@@ -55,7 +56,31 @@ class MockAITaskEntity(AITaskEntity):
         """Mock handling of generate data task."""
         self.mock_generate_data_tasks.append(task)
         if task.structure is not None:
-            data = {"name": "Tracy Chen", "age": 30}
+            # Check if this is a theme generation task by looking at the structure
+            # Theme tasks have "light" and "dark" keys which are unique to themes
+            structure_keys = {
+                k.schema if isinstance(k, vol.Optional) else k
+                for k in task.structure.schema
+            }
+            is_theme_task = "light" in structure_keys and "dark" in structure_keys
+            if is_theme_task:
+                data = {
+                    "name": "Autumn Warmth",
+                    "primary-color": "#d97706",
+                    "accent-color": "#b45309",
+                    "light": {
+                        "primary-background-color": "#fef3c7",
+                        "card-background-color": "#ffffff",
+                        "primary-text-color": "#1c1917",
+                    },
+                    "dark": {
+                        "primary-background-color": "#1c1917",
+                        "card-background-color": "#292524",
+                        "primary-text-color": "#fef3c7",
+                    },
+                }
+            else:
+                data = {"name": "Tracy Chen", "age": 30}
             data_chat_log = json.dumps(data)
         else:
             data = "Mock result"

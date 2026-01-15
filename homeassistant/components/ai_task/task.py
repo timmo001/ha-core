@@ -347,3 +347,261 @@ class ImageData:
     filename: str
     file: io.IOBase
     content_type: str
+
+
+@dataclass(slots=True)
+class GenThemeTask:
+    """Gen theme task to be processed."""
+
+    instructions: str
+    """Instructions describing the desired theme aesthetic."""
+
+    def __str__(self) -> str:
+        """Return task as a string."""
+        return f"<GenThemeTask: {id(self)}>"
+
+
+@dataclass(slots=True)
+class GenThemeTaskResult:
+    """Result of gen theme task."""
+
+    conversation_id: str
+    """Unique identifier for the conversation."""
+
+    name: str
+    """AI-generated name for the theme."""
+
+    variables: dict[str, str]
+    """Theme variables that apply to all modes."""
+
+    light: dict[str, str]
+    """Light mode specific variable overrides."""
+
+    dark: dict[str, str]
+    """Dark mode specific variable overrides."""
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return result as a dict for service response.
+
+        Returns the theme ready to use in config/themes/x.yaml.
+        """
+        # Build theme content with shared variables at top level
+        theme_content: dict[str, Any] = dict(self.variables)
+
+        # Add modes if there are mode-specific overrides
+        if self.light or self.dark:
+            modes: dict[str, dict[str, str]] = {}
+            if self.light:
+                modes["light"] = self.light
+            if self.dark:
+                modes["dark"] = self.dark
+            theme_content["modes"] = modes
+
+        return {
+            self.name: theme_content,
+        }
+
+
+# Theme variable schema for AI to generate
+# Based on Home Assistant's frontend THEME_SCHEMA and common variables from
+# popular themes like Catppuccin. Explicit variable names guide the AI on
+# exactly what variables to generate.
+
+# Mode-specific variables (used for both light and dark modes)
+_THEME_MODE_SCHEMA = {
+    vol.Optional("primary-background-color"): str,
+    vol.Optional("secondary-background-color"): str,
+    vol.Optional("card-background-color"): str,
+    vol.Optional("primary-text-color"): str,
+    vol.Optional("secondary-text-color"): str,
+    vol.Optional("text-primary-color"): str,
+    vol.Optional("disabled-text-color"): str,
+    vol.Optional("divider-color"): str,
+    vol.Optional("outline-color"): str,
+    vol.Optional("state-icon-color"): str,
+    vol.Optional("sidebar-background-color"): str,
+    vol.Optional("sidebar-text-color"): str,
+    vol.Optional("sidebar-icon-color"): str,
+    vol.Optional("sidebar-selected-icon-color"): str,
+    vol.Optional("sidebar-selected-text-color"): str,
+    vol.Optional("app-header-background-color"): str,
+    vol.Optional("app-header-text-color"): str,
+    vol.Optional("input-fill-color"): str,
+    vol.Optional("input-ink-color"): str,
+    vol.Optional("input-label-ink-color"): str,
+    vol.Optional("switch-checked-color"): str,
+    vol.Optional("switch-unchecked-button-color"): str,
+    vol.Optional("switch-unchecked-track-color"): str,
+    vol.Optional("slider-color"): str,
+    vol.Optional("scrollbar-thumb-color"): str,
+    vol.Optional("disabled-color"): str,
+    vol.Optional("state-active-color"): str,
+    vol.Optional("state-inactive-color"): str,
+    # Energy colors
+    vol.Optional("energy-grid-consumption-color"): str,
+    vol.Optional("energy-grid-return-color"): str,
+    vol.Optional("energy-solar-color"): str,
+    vol.Optional("energy-battery-out-color"): str,
+    vol.Optional("energy-battery-in-color"): str,
+    vol.Optional("energy-gas-color"): str,
+    vol.Optional("energy-water-color"): str,
+    # CodeMirror colors
+    vol.Optional("codemirror-keyword"): str,
+    vol.Optional("codemirror-operator"): str,
+    vol.Optional("codemirror-variable"): str,
+    vol.Optional("codemirror-string"): str,
+    vol.Optional("codemirror-comment"): str,
+    vol.Optional("codemirror-number"): str,
+}
+
+THEME_STRUCTURE_SCHEMA = vol.Schema(
+    {
+        # Theme metadata
+        vol.Required("name"): str,
+        # Core interface colors (shared between modes)
+        vol.Optional("primary-color"): str,
+        vol.Optional("accent-color"): str,
+        vol.Optional("error-color"): str,
+        vol.Optional("warning-color"): str,
+        vol.Optional("success-color"): str,
+        vol.Optional("info-color"): str,
+        # Named colors for states and charts
+        vol.Optional("red-color"): str,
+        vol.Optional("pink-color"): str,
+        vol.Optional("purple-color"): str,
+        vol.Optional("deep-purple-color"): str,
+        vol.Optional("indigo-color"): str,
+        vol.Optional("blue-color"): str,
+        vol.Optional("light-blue-color"): str,
+        vol.Optional("cyan-color"): str,
+        vol.Optional("teal-color"): str,
+        vol.Optional("green-color"): str,
+        vol.Optional("light-green-color"): str,
+        vol.Optional("lime-color"): str,
+        vol.Optional("yellow-color"): str,
+        vol.Optional("amber-color"): str,
+        vol.Optional("orange-color"): str,
+        vol.Optional("deep-orange-color"): str,
+        vol.Optional("brown-color"): str,
+        vol.Optional("grey-color"): str,
+        vol.Optional("light-grey-color"): str,
+        vol.Optional("dark-grey-color"): str,
+        # Light and dark mode specific variables
+        vol.Optional("light"): _THEME_MODE_SCHEMA,
+        vol.Optional("dark"): _THEME_MODE_SCHEMA,
+    }
+)
+
+# System prompt providing context about HA themes and default values
+THEME_SYSTEM_PROMPT = """You are a Home Assistant theme designer. Generate CSS custom property values for a Home Assistant theme.
+
+## Default Theme Values (Light Mode)
+- primary-color: rgb(0, 154, 199) (Home Assistant blue)
+- accent-color: rgb(255, 152, 0) (orange)
+- primary-background-color: rgb(250, 250, 250)
+- secondary-background-color: rgb(229, 229, 229)
+- card-background-color: rgb(255, 255, 255)
+- primary-text-color: rgb(33, 33, 33)
+- secondary-text-color: rgb(114, 114, 114)
+- disabled-text-color: rgb(189, 189, 189)
+- divider-color: rgba(0, 0, 0, 0.12)
+- app-header-background-color: rgb(0, 154, 199)
+- sidebar-background-color: rgb(255, 255, 255)
+
+## Default Theme Values (Dark Mode)
+- primary-background-color: rgb(17, 17, 17)
+- secondary-background-color: rgb(40, 40, 40)
+- card-background-color: rgb(28, 28, 28)
+- primary-text-color: rgb(225, 225, 225)
+- secondary-text-color: rgb(155, 155, 155)
+- disabled-text-color: rgb(111, 111, 111)
+- app-header-background-color: rgb(16, 30, 36)
+
+## Color Format Guidelines
+1. **Preferred**: Use `rgb(r, g, b)` or `rgba(r, g, b, a)` for most colors
+2. **For transparency**: Use `rgba()` with alpha values (e.g., `rgba(0, 0, 0, 0.12)`)
+3. **For advanced/HDR themes**: You may use modern CSS color functions:
+   - `oklch(L C H)` - Perceptually uniform, HDR-capable (e.g., `oklch(0.7 0.15 180)`)
+   - `oklab(L a b)` - Perceptually uniform lab space
+   - `color(display-p3 r g b)` - Wide gamut P3 color space
+   - `lch(L C H)` - CIE LCH color space
+4. **Fallback hex**: Use hex only when rgb would be redundant (e.g., pure white `#fff`)
+
+## Instructions
+1. Create a cohesive color palette based on the user's description
+2. Only include variables that differ from the defaults
+3. Ensure good contrast between text and background colors (WCAG 2.1 AA minimum)
+4. Generate a creative, descriptive name for the theme (2-4 words)
+5. The "light" and "dark" objects contain mode-specific overrides
+6. Shared colors (like primary-color, accent-color, named colors) go at the top level
+7. For vibrant/HDR themes, consider using oklch() for more saturated colors that work on HDR displays
+
+Focus on creating a visually appealing, accessible theme that matches the user's description."""
+
+
+async def async_generate_theme(
+    hass: HomeAssistant,
+    *,
+    entity_id: str | None = None,
+    instructions: str,
+) -> GenThemeTaskResult:
+    """Run a theme generation task using the AI Task integration."""
+    if entity_id is None:
+        entity_id = hass.data[DATA_PREFERENCES].gen_data_entity_id
+
+    if entity_id is None:
+        raise HomeAssistantError("No entity_id provided and no preferred entity set")
+
+    entity = hass.data[DATA_COMPONENT].get_entity(entity_id)
+    if entity is None:
+        raise HomeAssistantError(f"AI Task entity {entity_id} not found")
+
+    if AITaskEntityFeature.GENERATE_DATA not in entity.supported_features:
+        raise HomeAssistantError(
+            f"AI Task entity {entity_id} does not support generating data"
+        )
+
+    # Build the full instructions with system context
+    full_instructions = (
+        f"{THEME_SYSTEM_PROMPT}\n\n"
+        f"## User Request\n{instructions}\n\n"
+        "Generate a theme based on this description."
+    )
+
+    with async_get_chat_session(hass) as session:
+        result = await entity.internal_async_generate_data(
+            session,
+            GenDataTask(
+                name="generate_theme",
+                instructions=full_instructions,
+                structure=THEME_STRUCTURE_SCHEMA,
+                attachments=None,
+                llm_api=None,
+            ),
+        )
+
+    # Extract theme data from the result
+    theme_data = result.data
+
+    # Separate shared variables from mode-specific ones
+    variables: dict[str, str] = {}
+    light_vars: dict[str, str] = {}
+    dark_vars: dict[str, str] = {}
+
+    for key, value in theme_data.items():
+        if key == "name":
+            continue
+        if key == "light":
+            light_vars = {k: v for k, v in value.items() if v}
+        elif key == "dark":
+            dark_vars = {k: v for k, v in value.items() if v}
+        elif value:  # Only include non-empty values
+            variables[key] = value
+
+    return GenThemeTaskResult(
+        conversation_id=result.conversation_id,
+        name=theme_data.get("name", "Generated Theme"),
+        variables=variables,
+        light=light_vars,
+        dark=dark_vars,
+    )

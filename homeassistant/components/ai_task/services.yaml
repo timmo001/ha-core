@@ -59,3 +59,19 @@ generate_image:
           accept:
             - "*"
           multiple: true
+generate_theme:
+  fields:
+    instructions:
+      example: "Create a warm, cozy autumn theme with orange and brown tones"
+      required: true
+      selector:
+        text:
+          multiline: true
+    entity_id:
+      required: false
+      selector:
+        entity:
+          filter:
+            domain: ai_task
+            supported_features:
+              - ai_task.AITaskEntityFeature.GENERATE_DATA

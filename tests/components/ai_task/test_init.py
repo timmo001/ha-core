@@ -357,3 +357,76 @@ async def test_generate_image_service_no_entity(
             blocking=True,
             return_response=True,
         )
+
+
+@pytest.mark.parametrize(
+    ("set_preferences", "msg_extra"),
+    [
+        (
+            {"gen_data_entity_id": TEST_ENTITY_ID},
+            {},
+        ),
+        (
+            {},
+            {"entity_id": TEST_ENTITY_ID},
+        ),
+    ],
+)
+async def test_generate_theme_service(
+    hass: HomeAssistant,
+    init_components: None,
+    set_preferences: dict[str, str | None],
+    msg_extra: dict[str, str],
+    mock_ai_task_entity: MockAITaskEntity,
+) -> None:
+    """Test the generate theme service."""
+    preferences = hass.data[DATA_PREFERENCES]
+    preferences.async_set_preferences(**set_preferences)
+
+    result = await hass.services.async_call(
+        "ai_task",
+        "generate_theme",
+        {
+            "instructions": "Create a warm autumn theme with orange and brown tones",
+        }
+        | msg_extra,
+        blocking=True,
+        return_response=True,
+    )
+
+    # The result should contain the theme in HA format
+    assert "Autumn Warmth" in result
+
+    # Verify the theme structure
+    theme_content = result["Autumn Warmth"]
+    assert "primary-color" in theme_content
+    assert "modes" in theme_content
+    assert "light" in theme_content["modes"]
+    assert "dark" in theme_content["modes"]
+
+    # Verify the task was sent to the entity
+    assert len(mock_ai_task_entity.mock_generate_data_tasks) == 1
+    task = mock_ai_task_entity.mock_generate_data_tasks[0]
+    assert task.name == "generate_theme"
+    assert "warm autumn theme" in task.instructions
+    assert task.structure is not None
+
+
+async def test_generate_theme_service_no_entity(
+    hass: HomeAssistant,
+    init_components: None,
+) -> None:
+    """Test the generate theme service with no entity specified."""
+    with pytest.raises(
+        HomeAssistantError,
+        match="No entity_id provided and no preferred entity set",
+    ):
+        await hass.services.async_call(
+            "ai_task",
+            "generate_theme",
+            {
+                "instructions": "Create a warm autumn theme",
+            },
+            blocking=True,
+            return_response=True,
+        )

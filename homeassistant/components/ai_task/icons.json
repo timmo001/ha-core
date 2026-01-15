@@ -10,6 +10,9 @@
     },
     "generate_image": {
       "service": "mdi:star-four-points-box-outline"
+    },
+    "generate_theme": {
+      "service": "mdi:palette"
     }
   }
 }

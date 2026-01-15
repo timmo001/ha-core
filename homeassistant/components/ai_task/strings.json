@@ -47,6 +47,20 @@
         }
       },
       "name": "Generate image"
+    },
+    "generate_theme": {
+      "description": "Uses AI to generate a Home Assistant theme based on a description.",
+      "fields": {
+        "entity_id": {
+          "description": "Entity ID to run the task on. If not provided, the preferred entity will be used.",
+          "name": "Entity ID"
+        },
+        "instructions": {
+          "description": "Description of the desired theme aesthetic (e.g., 'warm autumn colors', 'minimalist dark theme').",
+          "name": "Instructions"
+        }
+      },
+      "name": "Generate theme"
     }
   }
 }
