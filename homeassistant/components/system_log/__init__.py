@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 import logging
 import re
+import socket
+import ssl
 import sys
 import traceback
 from types import FrameType
@@ -21,7 +23,7 @@ from homeassistant.helpers.typing import ConfigType
 
 type KeyType = tuple[str, tuple[str, int], tuple[str, int, str] | None]
 type ErrorType = Literal["auth", "connection", "timeout", "ssl", "dns"]
-_ERROR_TYPE_ATTR = "log_error_type"
+_CLASSIFICATION_ATTR = "classification"
 
 _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
     (
@@ -97,6 +99,14 @@ _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
     ),
 )
 _ERROR_TYPE_VALUES = {error_type for error_type, _ in _ERROR_TYPE_HINTS}
+_ERROR_TYPE_EXCEPTION_CLASSES: tuple[tuple[type[BaseException], ErrorType], ...] = (
+    (ConnectionError, "connection"),
+    (TimeoutError, "timeout"),
+    (socket.timeout, "timeout"),
+    (ssl.SSLError, "ssl"),
+    (ssl.CertificateError, "ssl"),
+    (socket.gaierror, "dns"),
+)
 
 CONF_MAX_ENTRIES = "max_entries"
 CONF_FIRE_EVENT = "fire_event"
@@ -237,7 +247,7 @@ def _safe_get_message(record: logging.LogRecord) -> str:
 
 
 def _classify_exception_error_type(exception: BaseException) -> ErrorType | None:
-    """Classify an exception from a class-declared error type."""
+    """Classify an exception from class attributes and base types."""
     seen: set[int] = set()
     current_exception: BaseException | None = exception
 
@@ -245,12 +255,16 @@ def _classify_exception_error_type(exception: BaseException) -> ErrorType | None
         seen.add(id(current_exception))
 
         for error_class in type(current_exception).__mro__:
-            class_error_type = vars(error_class).get(_ERROR_TYPE_ATTR)
+            class_error_type = vars(error_class).get(_CLASSIFICATION_ATTR)
             if (
                 isinstance(class_error_type, str)
                 and class_error_type in _ERROR_TYPE_VALUES
             ):
                 return cast(ErrorType, class_error_type)
+
+        for exception_class, error_type in _ERROR_TYPE_EXCEPTION_CLASSES:
+            if isinstance(current_exception, exception_class):
+                return error_type
 
         current_exception = current_exception.__cause__ or current_exception.__context__
 

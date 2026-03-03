@@ -26,7 +26,7 @@ BASIC_CONFIG = {"system_log": {"max_entries": 2}}
 class SelfClassifiedAuthError(Exception):
     """Represent self-classified authentication errors in tests."""
 
-    log_error_type: system_log.ErrorType = "auth"
+    classification: system_log.ErrorType = "auth"
 
 
 async def get_error_log(hass_ws_client):
@@ -165,6 +165,28 @@ async def test_error_type_connection_from_exception(
     )
 
 
+async def test_error_type_connection_from_base_exception_class(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that base Python connection exception classes are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise BrokenPipeError("Write failed")  # noqa: TRY301
+    except BrokenPipeError:
+        _LOGGER.exception("Request failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "Write failed",
+        "Request failed",
+        "ERROR",
+        error_type="connection",
+    )
+
+
 async def test_error_type_connection_from_config_entry_not_ready(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:
@@ -187,7 +209,7 @@ async def test_error_type_connection_from_config_entry_not_ready(
     )
 
 
-async def test_error_type_auth_from_exception_attr(
+async def test_error_type_auth_from_exception_classification(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:
     """Test that class-declared authentication errors are tagged."""
