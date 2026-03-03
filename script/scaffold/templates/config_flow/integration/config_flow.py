@@ -99,6 +99,10 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
 
+    log_error_type = "connection"
+
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+    log_error_type = "auth"

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from homeassistant.components import system_log
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
 
@@ -159,6 +160,28 @@ async def test_error_type_connection_from_exception(
         log,
         "Cannot connect to host",
         "Connection failure",
+        "ERROR",
+        error_type="connection",
+    )
+
+
+async def test_error_type_connection_from_config_entry_not_ready(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that config entry setup errors are tagged as connection issues."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise ConfigEntryNotReady("Retry setup")  # noqa: TRY301
+    except ConfigEntryNotReady:
+        _LOGGER.exception("Setup attempt failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "Retry setup",
+        "Setup attempt failed",
         "ERROR",
         error_type="connection",
     )

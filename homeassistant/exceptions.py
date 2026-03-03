@@ -216,9 +216,13 @@ class ConfigEntryError(IntegrationError):
 class ConfigEntryNotReady(IntegrationError):
     """Error to indicate that config entry is not ready."""
 
+    log_error_type = "connection"
+
 
 class ConfigEntryAuthFailed(IntegrationError):
     """Error to indicate that config entry could not authenticate."""
+
+    log_error_type = "auth"
 
 
 class OAuth2TokenRequestError(ClientResponseError, HomeAssistantError):
