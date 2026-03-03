@@ -22,8 +22,10 @@ _LOGGER = logging.getLogger("test_logger")
 BASIC_CONFIG = {"system_log": {"max_entries": 2}}
 
 
-class InvalidAuthError(Exception):
-    """Represent invalid authentication in tests."""
+class SelfClassifiedAuthError(Exception):
+    """Represent self-classified authentication errors in tests."""
+
+    log_error_type: system_log.ErrorType = "auth"
 
 
 async def get_error_log(hass_ws_client):
@@ -162,23 +164,23 @@ async def test_error_type_connection_from_exception(
     )
 
 
-async def test_error_type_auth_from_exception(
+async def test_error_type_auth_from_exception_attr(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:
-    """Test that authentication errors are tagged."""
+    """Test that class-declared authentication errors are tagged."""
     await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
     await hass.async_block_till_done()
 
     try:
-        raise InvalidAuthError("Invalid authentication")  # noqa: TRY301
-    except InvalidAuthError:
-        _LOGGER.exception("Login failed")
+        raise SelfClassifiedAuthError("Credentials rejected")  # noqa: TRY301
+    except SelfClassifiedAuthError:
+        _LOGGER.exception("Request failed")
 
     log = find_log(await get_error_log(hass_ws_client), "ERROR")
     assert_log(
         log,
-        "Invalid authentication",
-        "Login failed",
+        "Credentials rejected",
+        "Request failed",
         "ERROR",
         error_type="auth",
     )

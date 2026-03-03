@@ -21,6 +21,7 @@ from homeassistant.helpers.typing import ConfigType
 
 type KeyType = tuple[str, tuple[str, int], tuple[str, int, str] | None]
 type ErrorType = Literal["auth", "connection", "timeout", "ssl", "dns"]
+_ERROR_TYPE_ATTR = "log_error_type"
 
 _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
     (
@@ -95,6 +96,7 @@ _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
         ),
     ),
 )
+_ERROR_TYPE_VALUES = {error_type for error_type, _ in _ERROR_TYPE_HINTS}
 
 CONF_MAX_ENTRIES = "max_entries"
 CONF_FIRE_EVENT = "fire_event"
@@ -234,10 +236,40 @@ def _safe_get_message(record: logging.LogRecord) -> str:
             return f"Bad logger message: {ex}"
 
 
+def _classify_exception_error_type(exception: BaseException) -> ErrorType | None:
+    """Classify an exception from a class-declared error type."""
+    seen: set[int] = set()
+    current_exception: BaseException | None = exception
+
+    while current_exception is not None and id(current_exception) not in seen:
+        seen.add(id(current_exception))
+
+        for error_class in type(current_exception).__mro__:
+            class_error_type = vars(error_class).get(_ERROR_TYPE_ATTR)
+            if (
+                isinstance(class_error_type, str)
+                and class_error_type in _ERROR_TYPE_VALUES
+            ):
+                return cast(ErrorType, class_error_type)
+
+        current_exception = current_exception.__cause__ or current_exception.__context__
+
+    return None
+
+
 def _classify_error_type(
-    logger_name: str, message: str, exception: str
+    logger_name: str,
+    message: str,
+    exception: str,
+    exception_obj: BaseException | None,
 ) -> ErrorType | None:
     """Classify a log entry into a broad error type."""
+    if (
+        exception_obj
+        and (error_type := _classify_exception_error_type(exception_obj)) is not None
+    ):
+        return error_type
+
     haystack = f"{logger_name} {message} {exception}".lower()
 
     for error_type, hints in _ERROR_TYPE_HINTS:
@@ -280,8 +312,10 @@ class LogEntry:
         self.message = deque([_safe_get_message(record)], maxlen=5)
         self.exception = ""
         self.root_cause: tuple[str, int, str] | None = None
+        exception_obj: BaseException | None = None
         extracted_tb: list[tuple[FrameType, int]] | None = None
         if record.exc_info:
+            exception_obj = record.exc_info[1]
             if formatter and record.exc_text is None:
                 record.exc_text = formatter.formatException(record.exc_info)
             self.exception = record.exc_text or ""
@@ -303,6 +337,7 @@ class LogEntry:
             self.name,
             self.message[0],
             self.exception,
+            exception_obj,
         )
 
         self.count = 1
