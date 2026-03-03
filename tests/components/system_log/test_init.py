@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
+import json
 import logging
 import re
+import socket
+import ssl
 import traceback
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -27,6 +30,15 @@ class SelfClassifiedAuthError(Exception):
     """Represent self-classified authentication errors in tests."""
 
     classification: system_log.ErrorType = "auth"
+
+
+class StatusCodeError(Exception):
+    """Represent errors that expose an HTTP-style status code."""
+
+    def __init__(self, status: int) -> None:
+        """Initialize a new status error."""
+        super().__init__(f"HTTP status {status}")
+        self.status = status
 
 
 async def get_error_log(hass_ws_client):
@@ -184,6 +196,116 @@ async def test_error_type_connection_from_base_exception_class(
         "Request failed",
         "ERROR",
         error_type="connection",
+    )
+
+
+async def test_error_type_dns_from_base_exception_class(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that DNS exceptions are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise socket.gaierror(-2, "Name or service not known")  # noqa: TRY301
+    except socket.gaierror:
+        _LOGGER.exception("Name lookup failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "Name or service not known",
+        "Name lookup failed",
+        "ERROR",
+        error_type="dns",
+    )
+
+
+async def test_error_type_ssl_from_base_exception_class(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that SSL exceptions are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise ssl.SSLError("TLS handshake failed")  # noqa: TRY301
+    except ssl.SSLError:
+        _LOGGER.exception("Request failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "TLS handshake failed",
+        "Request failed",
+        "ERROR",
+        error_type="ssl",
+    )
+
+
+async def test_error_type_invalid_response_from_base_exception_class(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that payload decoding exceptions are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise json.JSONDecodeError("Expecting value", "{}", 0)  # noqa: TRY301
+    except json.JSONDecodeError:
+        _LOGGER.exception("Failed to parse response payload")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "Expecting value",
+        "Failed to parse response payload",
+        "ERROR",
+        error_type="invalid_response",
+    )
+
+
+async def test_error_type_rate_limit_from_status_code(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that status 429 exceptions are tagged as rate limit."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise StatusCodeError(429)  # noqa: TRY301
+    except StatusCodeError:
+        _LOGGER.exception("Request failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "HTTP status 429",
+        "Request failed",
+        "ERROR",
+        error_type="rate_limit",
+    )
+
+
+async def test_error_type_server_from_status_code(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that 5xx status code exceptions are tagged as server errors."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise StatusCodeError(503)  # noqa: TRY301
+    except StatusCodeError:
+        _LOGGER.exception("Request failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "HTTP status 503",
+        "Request failed",
+        "ERROR",
+        error_type="server",
     )
 
 

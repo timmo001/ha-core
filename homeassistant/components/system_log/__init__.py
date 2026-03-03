@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict, deque
+import json
 import logging
 import re
 import socket
@@ -22,10 +23,30 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 type KeyType = tuple[str, tuple[str, int], tuple[str, int, str] | None]
-type ErrorType = Literal["auth", "connection", "timeout", "ssl", "dns"]
+type ErrorType = Literal[
+    "auth",
+    "connection",
+    "dns",
+    "invalid_response",
+    "rate_limit",
+    "server",
+    "ssl",
+    "timeout",
+]
 _CLASSIFICATION_ATTR = "classification"
 
 _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
+    (
+        "rate_limit",
+        (
+            "ratelimit",
+            "rate limit",
+            "too many requests",
+            "too_many_requests",
+            "http 429",
+            "status 429",
+        ),
+    ),
     (
         "dns",
         (
@@ -46,6 +67,30 @@ _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
             "certificate error",
             "tlsv",
             "ssl:",
+        ),
+    ),
+    (
+        "server",
+        (
+            "internal server error",
+            "server error",
+            "service unavailable",
+            "bad gateway",
+            "gateway timeout",
+        ),
+    ),
+    (
+        "invalid_response",
+        (
+            "jsondecodeerror",
+            "invalidresponse",
+            "invalid response",
+            "malformed response",
+            "unexpected response",
+            "failed to parse",
+            "decodeerror",
+            "could not decode",
+            "invalid json",
         ),
     ),
     (
@@ -103,6 +148,8 @@ _ERROR_TYPE_EXCEPTION_CLASSES: tuple[tuple[type[BaseException], ErrorType], ...]
     (ConnectionError, "connection"),
     (TimeoutError, "timeout"),
     (socket.timeout, "timeout"),
+    (json.JSONDecodeError, "invalid_response"),
+    (UnicodeDecodeError, "invalid_response"),
     (ssl.SSLError, "ssl"),
     (ssl.CertificateError, "ssl"),
     (socket.gaierror, "dns"),
@@ -262,11 +309,52 @@ def _classify_exception_error_type(exception: BaseException) -> ErrorType | None
             ):
                 return cast(ErrorType, class_error_type)
 
+        if (
+            status_error_type := _classify_status_code_error_type(current_exception)
+        ) is not None:
+            return status_error_type
+
         for exception_class, error_type in _ERROR_TYPE_EXCEPTION_CLASSES:
             if isinstance(current_exception, exception_class):
                 return error_type
 
         current_exception = current_exception.__cause__ or current_exception.__context__
+
+    return None
+
+
+def _classify_status_code_error_type(exception: BaseException) -> ErrorType | None:
+    """Classify an exception from an HTTP style status code."""
+    if (status_code := _get_status_code(exception)) is None:
+        return None
+
+    if status_code in (401, 403):
+        return "auth"
+    if status_code == 408:
+        return "timeout"
+    if status_code == 429:
+        return "rate_limit"
+    if 500 <= status_code <= 599:
+        return "server"
+
+    return None
+
+
+def _get_status_code(exception: BaseException) -> int | None:
+    """Return status code from an exception and optional response object."""
+    response = vars(exception).get("response")
+
+    for source in (exception, response):
+        if source is None:
+            continue
+
+        for attr in ("status", "status_code", "code"):
+            try:
+                status_code = getattr(source, attr)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(status_code, int) and not isinstance(status_code, bool):
+                return status_code
 
     return None
 
