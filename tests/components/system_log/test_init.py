@@ -22,6 +22,10 @@ _LOGGER = logging.getLogger("test_logger")
 BASIC_CONFIG = {"system_log": {"max_entries": 2}}
 
 
+class InvalidAuthError(Exception):
+    """Represent invalid authentication in tests."""
+
+
 async def get_error_log(hass_ws_client):
     """Fetch all entries from system_log via the API."""
     client = await hass_ws_client()
@@ -53,7 +57,7 @@ def find_log(logs, level):
     return log
 
 
-def assert_log(log, exception, message, level):
+def assert_log(log, exception, message, level, error_type: str | None = None):
     """Assert that specified values are in a specific log entry."""
     if not isinstance(message, list):
         message = [message]
@@ -63,6 +67,10 @@ def assert_log(log, exception, message, level):
     assert message == log["message"]
     assert level == log["level"]
     assert "timestamp" in log
+    if error_type is None:
+        assert "error_type" not in log
+    else:
+        assert log["error_type"] == error_type
 
 
 class WatchLogErrorHandler(system_log.LogErrorHandler):
@@ -130,6 +138,69 @@ async def test_exception(
     log = find_log(await get_error_log(hass_ws_client), "ERROR")
     assert log is not None
     assert_log(log, "exception message", "log message", "ERROR")
+
+
+async def test_error_type_connection_from_exception(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that connection errors are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise ConnectionError("Cannot connect to host")  # noqa: TRY301
+    except ConnectionError:
+        _LOGGER.exception("Connection failure")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "Cannot connect to host",
+        "Connection failure",
+        "ERROR",
+        error_type="connection",
+    )
+
+
+async def test_error_type_auth_from_exception(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that authentication errors are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    try:
+        raise InvalidAuthError("Invalid authentication")  # noqa: TRY301
+    except InvalidAuthError:
+        _LOGGER.exception("Login failed")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "Invalid authentication",
+        "Login failed",
+        "ERROR",
+        error_type="auth",
+    )
+
+
+async def test_error_type_timeout_from_message(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that timeout errors can be tagged without an exception."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    _LOGGER.error("Request timed out while connecting")
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "",
+        "Request timed out while connecting",
+        "ERROR",
+        error_type="timeout",
+    )
 
 
 async def test_warning(hass: HomeAssistant, hass_ws_client: WebSocketGenerator) -> None:

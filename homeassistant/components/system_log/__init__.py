@@ -8,7 +8,7 @@ import re
 import sys
 import traceback
 from types import FrameType
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import voluptuous as vol
 
@@ -20,6 +20,81 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 type KeyType = tuple[str, tuple[str, int], tuple[str, int, str] | None]
+type ErrorType = Literal["auth", "connection", "timeout", "ssl", "dns"]
+
+_ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
+    (
+        "dns",
+        (
+            "clientconnectordnserror",
+            "gaierror",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "nodename nor servname",
+        ),
+    ),
+    (
+        "ssl",
+        (
+            "clientconnectorsslerror",
+            "clientconnectorcertificateerror",
+            "sslerror",
+            "certificate verify failed",
+            "certificate error",
+            "tlsv",
+            "ssl:",
+        ),
+    ),
+    (
+        "timeout",
+        (
+            "timeouterror",
+            "connecttimeout",
+            "readtimeout",
+            "timed out",
+            "timeout",
+        ),
+    ),
+    (
+        "auth",
+        (
+            "configentryauthfailed",
+            "invalidauth",
+            "authenticationerror",
+            "authorizationerror",
+            "auth failed",
+            "authentication failed",
+            "invalid authentication",
+            "invalid credentials",
+            "unauthorized",
+            "forbidden",
+            "access denied",
+            "not authenticated",
+            "login failed",
+            "token expired",
+        ),
+    ),
+    (
+        "connection",
+        (
+            "cannotconnect",
+            "cannot connect",
+            "can't connect",
+            "failed to connect",
+            "clientconnectorerror",
+            "clientconnectionerror",
+            "connectionerror",
+            "connecterror",
+            "connection refused",
+            "connection reset",
+            "server disconnected",
+            "network is unreachable",
+            "no route to host",
+            "connection aborted",
+            "broken pipe",
+        ),
+    ),
+)
 
 CONF_MAX_ENTRIES = "max_entries"
 CONF_FIRE_EVENT = "fire_event"
@@ -159,11 +234,25 @@ def _safe_get_message(record: logging.LogRecord) -> str:
             return f"Bad logger message: {ex}"
 
 
+def _classify_error_type(
+    logger_name: str, message: str, exception: str
+) -> ErrorType | None:
+    """Classify a log entry into a broad error type."""
+    haystack = f"{logger_name} {message} {exception}".lower()
+
+    for error_type, hints in _ERROR_TYPE_HINTS:
+        if any(hint in haystack for hint in hints):
+            return error_type
+
+    return None
+
+
 class LogEntry:
     """Store HA log entries."""
 
     __slots__ = (
         "count",
+        "error_type",
         "exception",
         "first_occurred",
         "key",
@@ -209,12 +298,19 @@ class LogEntry:
             self.source = _figure_out_source(record, paths_re, extracted_tb)
         else:
             self.source = (record.pathname, record.lineno)
+
+        self.error_type = _classify_error_type(
+            self.name,
+            self.message[0],
+            self.exception,
+        )
+
         self.count = 1
         self.key = (self.name, self.source, self.root_cause)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert object into dict to maintain backward compatibility."""
-        return {
+        data = {
             "name": self.name,
             "message": list(self.message),
             "level": self.level,
@@ -224,6 +320,11 @@ class LogEntry:
             "count": self.count,
             "first_occurred": self.first_occurred,
         }
+
+        if self.error_type is not None:
+            data["error_type"] = self.error_type
+
+        return data
 
 
 class DedupStore(OrderedDict[KeyType, LogEntry]):
@@ -246,6 +347,9 @@ class DedupStore(OrderedDict[KeyType, LogEntry]):
 
             if entry.message[0] not in existing.message:
                 existing.message.append(entry.message[0])
+
+            if existing.error_type is None and entry.error_type is not None:
+                existing.error_type = entry.error_type
 
             self.move_to_end(key)
         else:
