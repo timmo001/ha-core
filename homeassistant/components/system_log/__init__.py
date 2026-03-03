@@ -30,7 +30,9 @@ type ErrorType = Literal[
     "invalid_response",
     "rate_limit",
     "server",
+    "slow_setup",
     "ssl",
+    "statistics",
     "timeout",
 ]
 _CLASSIFICATION_ATTR = "classification"
@@ -92,6 +94,19 @@ _ERROR_TYPE_HINTS: tuple[tuple[ErrorType, tuple[str, ...]], ...] = (
             "could not decode",
             "invalid json",
         ),
+    ),
+    (
+        "statistics",
+        (
+            "long term statistics",
+            "statistics will be suppressed",
+            "cannot be converted to the unit of previously compiled statistics",
+            "fix_issue_unit_mismatch",
+        ),
+    ),
+    (
+        "slow_setup",
+        ("is taking over 10 seconds",),
     ),
     (
         "timeout",

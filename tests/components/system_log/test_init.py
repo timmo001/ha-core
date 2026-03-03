@@ -372,6 +372,54 @@ async def test_error_type_timeout_from_message(
     )
 
 
+async def test_error_type_statistics_from_message(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that statistics suppression issues are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    _LOGGER.error(
+        "The unit of sensor.statistics_issues_issue_2 (dogs) cannot be converted "
+        "to the unit of previously compiled statistics (cats). Generation of "
+        "long term statistics will be suppressed unless the unit changes back to "
+        "cats or a compatible unit"
+    )
+
+    log = find_log(await get_error_log(hass_ws_client), "ERROR")
+    assert_log(
+        log,
+        "",
+        [
+            "The unit of sensor.statistics_issues_issue_2 (dogs) cannot be "
+            "converted to the unit of previously compiled statistics (cats). "
+            "Generation of long term statistics will be suppressed unless the "
+            "unit changes back to cats or a compatible unit"
+        ],
+        "ERROR",
+        error_type="statistics",
+    )
+
+
+async def test_warning_type_slow_setup_from_message(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test that slow platform setup warnings are tagged."""
+    await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
+    await hass.async_block_till_done()
+
+    _LOGGER.warning("Setup of select platform switchbot is taking over 10 seconds")
+
+    log = find_log(await get_error_log(hass_ws_client), "WARNING")
+    assert_log(
+        log,
+        "",
+        "Setup of select platform switchbot is taking over 10 seconds",
+        "WARNING",
+        error_type="slow_setup",
+    )
+
+
 async def test_warning(hass: HomeAssistant, hass_ws_client: WebSocketGenerator) -> None:
     """Test that warning are logged and retrieved correctly."""
     await async_setup_component(hass, system_log.DOMAIN, BASIC_CONFIG)
